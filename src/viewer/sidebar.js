@@ -2,7 +2,7 @@
 import { MeasuringTool } from "../utils/MeasuringTool.js";
 import { ProfileTool } from "../utils/ProfileTool.js";
 import { VolumeTool } from "../utils/VolumeTool.js";
-
+import { BoxVolume } from "../utils/Volume.js";
 import { GeoJSONExporter } from "../exporter/GeoJSONExporter.js"
 import { DXFExporter } from "../exporter/DXFExporter.js"
 import { Volume, SphereVolume } from "../utils/Volume.js"
@@ -22,6 +22,8 @@ import { OrbitControls } from "../navigation/OrbitControls.js"
 
 import { ZoomableSlider } from "./ZoomableSlider.js"
 
+
+
 export class Sidebar {
 
 	constructor(viewer) {
@@ -30,6 +32,7 @@ export class Sidebar {
 		this.measuringTool = new MeasuringTool(this.viewer);
 		this.profileTool = new ProfileTool(this.viewer);
 		this.volumeTool = new VolumeTool(this.viewer);
+		
 
 	}
 
@@ -57,12 +60,71 @@ export class Sidebar {
 		this.initClippingTool();
 		this.initClassificationTool();
 		this.initSettings();
-
+		this.initFileUpload();
 		$('#potree_version_number').html(Potree.version.major + "." + Potree.version.minor + Potree.version.suffix);
 		$('.perfect_scrollbar').perfectScrollbar();
 	}
 
+	initFileUpload() {
+		function getFile(event) {
+			const input = event.target
+		if ('files' in input && input.files.length > 0) {
+			
+			placeFileContent(
+			undefined,
+			input.files[0])
 
+		}
+		}
+		let volumes = this.viewer.scene.volumes
+		let scene = this.viewer.scene
+		let volumeTool = this.volumeTool
+		function placeFileContent(target, file) {
+			readFileContent(file).then(function success(content) {
+			let annotations = content.split('\n').map(x => x.split(' '))
+			
+
+			let colormap = {
+				1: {r: 255, g: 0, b: 0},
+				2: {r: 0, g: 255, b: 0},
+				3: {r: 255, g: 255, b: 0},
+				4: {r: 0, g: 0, b: 255},
+				5: {r: 0, g: 255, b: 255},
+				6: {r: 255, g: 0, b: 255},
+			}
+			{ // VOLUME visible
+				annotations.map(annoTxt => {
+					
+					let anno = annoTxt.map(parseFloat)
+					let volume = new BoxVolume({clip: true});
+					volume.visible = true;
+					volume.material.opacity = 1;
+					volume.material.wireframe = true;
+					volume.material.color = {r: 1, g: 0, b: 0 };
+					volume.frame.material.color = colormap[anno[0]];
+					volume.frame.material.linewidth = 2;
+					volume.name = "class"+anno[0];
+					volume.scale.set(...anno.slice(4,7));
+					volume.rotation.set(0.000, 0.000, -1*anno[7]);
+					volume.position.set(...anno.slice(1,4));
+					volume.userData = {classification: anno[0]}
+					volumeTool.update();
+					scene.addVolume(volume)
+				})
+			}
+		}).catch(error => console.log(error))
+		}
+
+		function readFileContent(file) {
+			const reader = new FileReader()
+		return new Promise((resolve, reject) => {
+			reader.onload = event => resolve(event.target.result)
+			reader.onerror = error => reject(error)
+			reader.readAsText(file)
+		})
+		}
+		document.getElementById('input-file').addEventListener('change', getFile)
+	}
 
 	initToolbar() {
 
@@ -247,7 +309,7 @@ export class Sidebar {
 				<a href="#" download="measure.dxf"><img name="dxf_export_button" src="${dxfIcon}" class="button-icon" style="height: 24px" /></a>
 				<a href="#" download="annotations.txt"><img name="anno_export_button" src="${annoIcon}" class="button-icon" style="height: 24px" /></a>
 
-			`);
+			`); 
 			let elDownloadAnno = elExport.find("img[name=anno_export_button]").parent();
 			elDownloadAnno.click((event) => {
 				let scene = this.viewer.scene;
@@ -258,9 +320,9 @@ export class Sidebar {
 					let position = volume.position.toArray();
 					let rotation = volume.rotation.toArray().slice(0, 3);
 					let scale = volume.scale.toArray();
-					let data = [...position, ...scale, rotation[2], 1.00].map(c => c.toFixed(4));
+					let data = [...position, ...scale, -1*rotation[2]].map(c => c.toFixed(4));
 					let classd = volume.userData.classification;
-					return [classd, ...data].join(" ")
+					return [classd, ...data, 1.00].join(" ")
 				}).join('\n')
 				if (volumes.length > 0) {
 					let url = window.URL.createObjectURL(new Blob([annotations], { type: 'data:application/octet-stream' }));
